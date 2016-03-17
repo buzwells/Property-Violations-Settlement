@@ -6,3 +6,5 @@ violations_dir.rdf
 docs/violations_dir.rdf
 docs/*.html
 data/Property_Violations.csv
+docs/*cache
+docs/*files
