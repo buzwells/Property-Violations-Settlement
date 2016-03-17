@@ -11,8 +11,6 @@ knitr::opts_chunk$set(cache=FALSE)
 if(!exists('violations_dir')) {
   source("../configuration/violations_env.R")
 }
-knitr::opts_knit$set(root.dir = violations_dir)
-knitr::opts_knit$get("root.dir")
 ```
 
 CodeForKC is sponsoring a project to investigate how to leverage the data it has made available on real property that violates city ordinance codes (\"code violations\"). Code violations include a wide range of conditions. The city's website breaks code violations down into two main categories: [nuisances and property violations](http://kcmo.gov/neighborhoods/neighborhood-preservation/common-code-violations/). Nuisances include conditions like litter, overgrown weeds or grass and damaged or unlicensed vehicles. Property violations cover broken windows, open entry and various other more serious building problems with roofs or walls. They also cover the requirement that both rental and vacant property must be registered. 
@@ -25,8 +23,9 @@ The core dataset [can be found on the open data website for Kansas City](https:/
 
 ```{r message=FALSE}
 # load the violations data
-
-source(paste(violations_dir, "/data/load_violations.R", sep = ""))
+path <- sprintf("%s%s", violations_dir, "R/load_violations.R")
+source(path)
+#path <- sprintf("%s%s", violations_dir, "R/add_ordinance_titles.R")
 violations %>%  glimpse()
 # TODO - remove this temporary code once the data is fixed
 violations <- violations %>% filter(!is.na(Days.Open))

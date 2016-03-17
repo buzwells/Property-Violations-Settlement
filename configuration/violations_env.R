@@ -7,4 +7,8 @@
 #
 # -> Replace with the full path to your working directory
 violations_dir <- 
-  "/Users/prodigal/Documents/code/ckc/Property-Violations-Settlement/Property-Violations-Settlement"
+  "/Users/joelwells/Documents/code/ckc/Property-Violations-Settlement/"
+
+get_violations_dir <- function() {
+  violations_dir
+}
