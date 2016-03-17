@@ -1,0 +1,466 @@
+---
+title: "Code Violation Types - First Look"
+output: html_document
+linkcolor: blue
+toc: yes
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(cache=FALSE)
+if(!exists('violations_dir')) {
+  source("../configuration/violations_env.R")
+}
+knitr::opts_knit$set(root.dir = violations_dir)
+knitr::opts_knit$get("root.dir")
+```
+
+CodeForKC is sponsoring a project to investigate how to leverage the data it has made available on real property that violates city ordinance codes (\"code violations\"). Code violations include a wide range of conditions. The city's website breaks code violations down into two main categories: [nuisances and property violations](http://kcmo.gov/neighborhoods/neighborhood-preservation/common-code-violations/). Nuisances include conditions like litter, overgrown weeds or grass and damaged or unlicensed vehicles. Property violations cover broken windows, open entry and various other more serious building problems with roofs or walls. They also cover the requirement that both rental and vacant property must be registered. 
+
+Code violations can create dangerous conditions, depress real property prices and hamper economic development. One possible use for the code violations data might be to tease out these and other impacts with more specificity, but at the outset we can take it is as a given that code violations are a problem and that we should be looking for clues telling us how we might reduce their number and shorten their lifespan.
+
+## Violation Summary Records
+
+The core dataset [can be found on the open data website for Kansas City](https://data.kcmo.org/Housing/Property-Violations/nhtf-e75a). It consists of more than 400,000 summary records for the code violations. There is a single record for each violation describing when it started, what it's about, the current status and if/when it ended. Each record also contains a variety of data to help locate the violation geographically. Let's see what this data looks like.
+
+```{r message=FALSE}
+# load the violations data
+
+source(paste(violations_dir, "/data/load_violations.R", sep = ""))
+violations %>%  glimpse()
+# TODO - remove this temporary code once the data is fixed
+violations <- violations %>% filter(!is.na(Days.Open))
+```
+
+Because this is a summary record, it does not describe all the history. For instance, it does not contain information about each compliance or enforcement activity intended to remedy the violation. 
+
+If the initial focus from an analysis perspective is on (a) the number of violations and (b) how long it takes to resolve them, then that suggests we look at record counts and days open (along with the related case opened and closed dates) and begin by asking how these vary across violation type, location and time. These are all questions that the summary records by themselves can shed light on.
+
+## Classifying Violations - Ordinance Chapter
+
+What types of violation are most common? We have four fields that classify the violations: Violation Code, Violation Description, Ordinance Number and Ordinance Chapter. Let's start with the coarsest-grained classification: Ordinance Chapter.
+
+```{r}
+library(ggplot2)
+
+by_chapter <- violations %>% 
+  group_by(Ordinance.Chapter) %>% 
+  summarize(Violation.Count = n(), Mean.Days.Open = mean(Days.Open), 
+            Median.Days = median(Days.Open)) %>%
+  ungroup() %>% 
+  mutate(Percent.Violations = (Violation.Count / nrow(violations))*100.00) %>% 
+  arrange(desc(Violation.Count))
+
+by_chapter %>% 
+  ggplot(aes(reorder(Ordinance.Chapter, -Violation.Count), Violation.Count)) + 
+  geom_bar(stat="identity") + 
+  labs(title="Number of Violations by Ordinance Chapter (2009-2016)") + 
+  xlab("Ordinance Chapter") + ylab("Violations")
+
+```
+
+Although five chapters make an appearance, the bulk of the violations occur in two chapters: 48 (nuisances) and 56 (property violations). Nuisances far exceed property violations, but how do the two compare in terms of the time it takes to resolve them?
+
+```{r by_chapter}
+
+by_chapter %>% 
+  ggplot(aes(reorder(Ordinance.Chapter, -Violation.Count), Mean.Days.Open)) +    
+  geom_bar(stat="identity") + 
+  labs(title="Average Days Open by Ordinance Chapter (2009-2016)") + 
+  xlab("Ordinance Chapter") + ylab("Average Days Open")
+```
+
+When measured by the "Days.Open" mean in the dataset, then, nuisances take less time to resolve than property violations. Again, this is not particularly surprising given that property violations generally require more time, money and effort to cure (think roof repair versus lawn maintenance). The ordinances even provide for a longer remedial period for property violations.
+
+But we need to be careful when evaluating days open. We began by asking how long it takes to resolve violations, but "days open" is not the same thing as "days to close". Many of the violations are still in an open status. How would this look if we were to only consider violations that have fully run their course and have been resolved (i.e., that have a "Closed" status)?
+
+```{r}
+by_chapter_closed <- violations %>% 
+  filter(Status == "Closed") %>% 
+  group_by(Ordinance.Chapter) %>% 
+  summarize(Violation.Count = n(), Mean.Days.Open = mean(Days.Open), 
+            Median.Days = median(Days.Open)) %>% 
+  ungroup()
+
+by_chapter_closed %>%
+  ggplot(aes(reorder(Ordinance.Chapter, -Violation.Count), Mean.Days.Open)) +    
+  geom_bar(stat="identity") +
+  labs(title="Average Days to Close by Ordinance Chapter (2009-2016)") +
+  xlab("Ordinance Chapter") + ylab("Average Days to Close")
+
+```
+
+Eliminating open violations brings down the average days open significantly. Interestingly, though, the proportions between chapters remain roughly the same. Including all violations, nuisances stay open `r round(by_chapter[which(by_chapter$Ordinance.Chapter == '48'), 'Mean.Days.Open'] / by_chapter[which(by_chapter$Ordinance.Chapter == '56'), 'Mean.Days.Open'], digits = 4)*100`% as long as property violations. Looking only at closed violations, nuisances stay open `r round(by_chapter_closed[which(by_chapter_closed$Ordinance.Chapter == '48'), 'Mean.Days.Open'] / by_chapter_closed[which(by_chapter_closed$Ordinance.Chapter == '56'), 'Mean.Days.Open'], digits = 4)*100`% as long.
+
+On balance, and for most purposes, it's better to include cases that are still open than to exclude them. Violations that stubbornly resist resolution are precisely the ones that are most concerning. But, as we move forward slicing and dicing the data in different ways, we should be prepared to make this distinction where it is significant. 
+
+So, averages are useful, but how much lifespan variability do violations exhibit? A boxplot of days open by ordinance chapter is revealing.
+
+```{r}
+
+violations  %>% 
+  filter(Ordinance.Chapter == '48' | Ordinance.Chapter == '56') %>% 
+  ggplot(aes(Ordinance.Chapter, Days.Open)) + 
+  geom_boxplot(outlier.colour = "RED") +
+  labs(title="Days Open Dispersion for Nuisances and Property Violations (2009-2016)") +
+  xlab("Ordinance Chapter") + ylab("Days Open")
+
+```
+
+The median, particularly for nuisances, is very low on the dispersion line, and there appear to be a lot of outliers. The so-called "coefficient of variation" - which simply divides the standard deviation by the mean - also suggests some pretty significant variability in days open within ordinance chapters. It's `r round(sd(violations[which(violations$Ordinance.Chapter == '48'), 'Days.Open']) / mean(violations[which(violations$Ordinance.Chapter == '48'), 'Days.Open']), digits = 3)` for nuisances and `r round(sd(violations[which(violations$Ordinance.Chapter == '56'), 'Days.Open']) / mean(violations[which(violations$Ordinance.Chapter == '56'), 'Days.Open']), digits = 3)` for property violations.
+
+In a sense, this variability just confirms the intuition that many violations take far longer than they "should" to resolve. But it also opens up some avenues for exploration. A good place to begin is by looking more closely at the differences in the kinds of problems covered by each chapter.
+
+## Ordinance Number and Title
+
+From a brief look at violation counts and average days open by ordinance chapter, we learned that:
+
+1. Nuisances and property violations account for 99% of code violations
+2. Nuisances are significantly more common than property violations.
+3. Nuisances generally do not stay open as long as property violations.
+4. There is considerable variability in how long violations of the same ordinance chapter stay open.
+
+Ordinance chapter classifications by themselves do not really give a sense of the nature of the underlying violation. We need something a little finer-grained. The text fields revolving around violation, on the other hand, seem too granular. Ordinance number may be at the right level but in raw form is pretty impenetrable. Paired with a description based on an abbreviation of ordinance title, however, it becomes easier to understand. The resulting new field is called "Ordinance.Title". 
+
+Let's zoom in, then, on the top individual ordinances (in terms of violation count).
+
+```{r}
+library(dplyr)
+library(ggplot2)
+by_title <- violations %>% 
+  group_by(Ordinance.Title) %>% 
+  summarize(Violation.Count = n(), Mean.Days.Open = mean(Days.Open)) %>%
+  ungroup() %>% 
+  filter(Violation.Count > 3000) %>% 
+  mutate(Percent.Violations = (Violation.Count / nrow(violations))*100.00) %>%
+  arrange(desc(Violation.Count))
+
+by_title$Percent.Violations <- round(by_title$Percent.Violations, digits = 2)
+
+by_title %>% 
+  ggplot(aes(reorder(Ordinance.Title, -Violation.Count), Violation.Count)) +    
+  geom_bar(stat="identity") + 
+  labs(title="Number of Violations by Ordinance (2009-2016)") + 
+  xlab("Ordinance Title") + ylab("Violations") +
+  theme(axis.text.x  = element_text(angle=90, vjust=0.5, size=8))
+```
+
+These "top" ordinances account for `r sum(by_title[, 'Percent.Violations'])` % of all violations. The top three alone - trash, overgrown weeds/grass, and open storage, all nuisance violations - account for `r sum(by_title[1:3, 'Percent.Violations'])` of violations. Notice, as well, the presence in this list of some violations that almost deserve a class of their own: registration requirement violations for either vacant or rental property.
+
+How do the average lifespans of these different ordinance violations compare?
+
+```{r}
+by_title %>% 
+  ggplot(aes(reorder(Ordinance.Title, -Violation.Count), Mean.Days.Open)) +    
+  geom_bar(stat="identity") + 
+  labs(title="Average Days Open by Ordinance (2009-2016)") + 
+  xlab("Ordinance Title") + ylab("Violations") +
+  theme(axis.text.x  = element_text(angle=90, vjust=0.5, size=8))
+```
+
+Mostly, the nuisance and property violations follow the pattern of their respective chapters, with property violations staying open longer than nuisances. One exception is rental registration violations, which is technically a property violation but appears to have a lifespan more like a nuisance violation. Contrast that with violations of the vacant property registration requirement, which are on the longer end even for property violations. Is it easier to find a responsible party to resolve rental registration issues? Does a rental registration violation even indicate the same kind of problematic condition as the rest of the code violations (which generally signify that the property is deteriorating, sometimes dangerously)? We may want to think about that as we look at correlations between code violations and other problems (e.g., health, crime, economic distress) and as we consider how best to present code violations in applications like neighborhood stats.
+
+Something else that stands out is the very short-lived nuisance violation relating to buildings that are open to entry (48-31). The neighborhood preservation section of Kansas City's website notes that [buildings that are open to entry are considered emergencies and can be "boarded up" by the city](http://kcmo.gov/neighborhoods/neighborhood-preservation/dangerous-buildings-and-demolitions/). If this is the ordinance used in those cases, that could explain why it is generally so short-lived.
+
+How about the variance in lifespan within each set of ordinance violations?
+
+```{r}
+violations  %>% 
+  filter(Ordinance.Title %in% by_title$Ordinance.Title) %>% 
+  ggplot(aes(reorder(Ordinance.Title, 
+                     Ordinance.Title, function(x) - length(x)), Days.Open)) + 
+  geom_boxplot(outlier.colour = "RED") +
+  labs(title="Days Open Dispersion by Ordinance (2009-2016)") +
+  xlab("Ordinance Title") + ylab("Days Open") +
+  theme(axis.text.x  = element_text(angle=90, vjust=0.5, size=8))
+```
+
+This graph is quick and dirty. But it does show that the medians of the nuisances tend to be lower in the inter-quartile range than the medians of property violations (with the exception of rental registration and cooking/heating property violations). One little surprise involves the open to entry ordinance. The range is so compressed that it's not even visible, but there are far more outliers than might be expected. 
+
+## Ordinances - Conclusions
+
+This review of violations by ordinance has yielded some insights:
+
+* Ordinances, decorated with a little text (the Ordinance Title), proved a pretty useful grouping (more granular without being too granular). We would want to do more work to confirm that the text is accurate, since I just constructed the text from a quick review of the actual titles of the ordinances (and a little of their text)
+* Three nuisance violations account for almost half of all violations
+* The median violation lifespan is significantly lower than the mean
+* For the most part, ordinance lifespans behave like their respective chapters (property violations last longer than nuisances)
+* Open to entry violations have a much shorter lifespan than other violations
+* Rental registration violations behave more like nuisance violations than property violations, and we may want to consider excluding them from some analyses
+* There are a considerable number of outliers for most ordinances that stay open for a very long time (stubborn violations)
+
+
+## Stubborn Violations by Zip Code
+
+Many of the graphs above reveal a large body of outlying violations that linger for a very long time. What if we were to scrutinize those "stubborn" violations a little more closely, looking at the zip codes where they are more prevalant and less so, and also looking at the underlying types of violations. We'll start by carving off the stubborn violations (lasting 1000 days or more) and the zip codes that have the most of these. 
+
+```{r}
+stubborn_violations <- violations %>% 
+  filter(Days.Open >= 500)
+
+stubborn_by_zip <- stubborn_violations %>% 
+  group_by(Zip.Code, Ordinance.Chapter) %>% 
+  summarize(Violation.Count = n(), Mean.Days.Open = mean(Days.Open), 
+            Median.Days = median(Days.Open)) %>%
+  ungroup() %>% 
+  filter(Ordinance.Chapter == '48' | Ordinance.Chapter == '56') %>% 
+  arrange(desc(Violation.Count))
+
+by_zip_alone <- stubborn_violations %>% 
+  filter(Ordinance.Chapter == '48' | Ordinance.Chapter == '56') %>% 
+  group_by(Zip.Code) %>% 
+  summarize(Violation.Count = n(), Mean.Days.Open = mean(Days.Open), 
+            Median.Days = median(Days.Open)) %>%
+  ungroup() %>% 
+  arrange(desc(Violation.Count))
+
+by_zip_alone_top <- by_zip_alone %>% filter(Violation.Count > 3000)
+
+stubborn_by_zip %>% 
+  filter(Zip.Code %in% by_zip_alone_top$Zip.Code) %>% 
+  ggplot(aes(reorder(Zip.Code, -Violation.Count), 
+             Violation.Count, fill = Ordinance.Chapter)) + 
+  geom_bar(stat="identity", position = 'dodge') + 
+  labs(title="Stubborn Violations by Zip Code (2009-2016)") + 
+  xlab("Zip Code") + ylab("Violations") +
+  theme(axis.text.x  = element_text(angle=90, vjust=0.5, size=8))
+
+```
+
+What's interesting about this is that property violations outnumber or roughly equal nuisance violations in the zip codes with the largest number of stubborn violations. But the trend seems to reverse a little as the concentration of stubborn violations declines. If you continue into the next tier of zip codes (in terms of stubborn violations), you will see some cases where nuisance violations outnumber property violations (although there are counter-examples in this mix as well). 
+
+```{r}
+by_zip_alone_2d_tier <- by_zip_alone %>% 
+  filter(Violation.Count <= 3000 & Violation.Count > 400)
+
+stubborn_by_zip %>% 
+  filter(Zip.Code %in% by_zip_alone_2d_tier$Zip.Code) %>% 
+  ggplot(aes(reorder(Zip.Code, -Violation.Count), 
+             Violation.Count, fill = Ordinance.Chapter)) + 
+  geom_bar(stat="identity", position = 'dodge') + 
+  labs(title="Stubborn Violations by Zip Code - Second Tier (2009-2016)") + 
+  xlab("Zip Code") + ylab("Violations") +
+  theme(axis.text.x  = element_text(angle=90, vjust=0.5, size=8))
+```
+
+What about the violations that have not been open as long (less than 500 days)? Here's what that looks like in the zip codes with the most violations.
+
+```{r}
+easy_violations <- violations %>% 
+  filter(Days.Open < 500)
+
+easy_by_zip <- easy_violations %>% 
+  group_by(Zip.Code, Ordinance.Chapter) %>% 
+  summarize(Violation.Count = n(), Mean.Days.Open = mean(Days.Open), 
+            Median.Days = median(Days.Open)) %>%
+  ungroup() %>% 
+  filter(Ordinance.Chapter == '48' | Ordinance.Chapter == '56') %>% 
+  arrange(desc(Violation.Count))
+
+easy_by_zip_alone_top <- easy_by_zip %>% filter(Violation.Count > 5000)
+
+easy_by_zip %>% 
+  filter(Zip.Code %in% easy_by_zip_alone_top$Zip.Code) %>% 
+  ggplot(aes(reorder(Zip.Code, -Violation.Count), 
+             Violation.Count, fill = Ordinance.Chapter)) + 
+  geom_bar(stat="identity", position = 'dodge') + 
+  labs(title="Easy Violations by Zip Code (2009-2015)") + 
+  xlab("Zip Code") + ylab("Violations") +
+  theme(axis.text.x  = element_text(angle=90, vjust=0.5, size=8))
+```
+
+Not surprisingly, nuisance violations show up as far more common almost across the board. Here's the second tier of zip codes.
+
+```{r}
+easy_by_zip_alone_2d <- easy_by_zip %>% 
+  filter(Violation.Count <= 5000 & Violation.Count > 1000)
+
+easy_by_zip %>% 
+  filter(Zip.Code %in% easy_by_zip_alone_2d$Zip.Code) %>% 
+  ggplot(aes(reorder(Zip.Code, -Violation.Count), 
+             Violation.Count, fill = Ordinance.Chapter)) + 
+  geom_bar(stat="identity", position = 'dodge') + 
+  labs(title="Easy Violations by Zip Code 2d Tier (2009-2016)") + 
+  xlab("Zip Code") + ylab("Violations") +
+  theme(axis.text.x  = element_text(angle=90, vjust=0.5, size=8))
+```
+
+Again, while the trend is not completely uniform, the predominance of nuisances is generally more pronounced in this second tier.
+
+Do zip codes that have the most problems with violations also tend to have a greater proportion of property violations? Let's look at this using all the violations - stubborn, easy and in between.
+
+```{r}
+by_zip <- violations %>% 
+  group_by(Zip.Code, Ordinance.Chapter) %>% 
+  summarize(Violation.Count = n(), Mean.Days.Open = mean(Days.Open), 
+            Median.Days = median(Days.Open)) %>%
+  ungroup() %>% 
+  filter(Ordinance.Chapter == '48' | Ordinance.Chapter == '56') %>% 
+  arrange(desc(Violation.Count))
+
+by_zip_alone_all <- violations %>% 
+  filter(Ordinance.Chapter == '48' | Ordinance.Chapter == '56') %>% 
+  group_by(Zip.Code) %>% 
+  summarize(Violation.Count = n(), Mean.Days.Open = mean(Days.Open), 
+            Median.Days = median(Days.Open)) %>%
+  ungroup() %>% 
+  arrange(desc(Violation.Count))
+
+by_zip_alone_top_all <- by_zip_alone_all %>% 
+  filter(Violation.Count > 3000)
+
+by_zip %>% 
+  filter(Zip.Code %in% by_zip_alone_top_all$Zip.Code) %>% 
+  ggplot(aes(reorder(Zip.Code, -Violation.Count), 
+             Violation.Count, fill = Ordinance.Chapter)) + 
+  geom_bar(stat="identity", position = 'dodge') + 
+  labs(title="All Violations by Zip Code (2009-2016)") + 
+  xlab("Zip Code") + ylab("Violations") +
+  theme(axis.text.x  = element_text(angle=90, vjust=0.5, size=8))
+```
+
+The prevalence of property violations may correlate to the density of code violations, but it is not at all clear. There is a great deal more to explore here. Do nuisances often also arise in cases involving property violations? How does this picture look if we factor in population and income?
+
+## Multiple Violation Cases
+
+Violations do not always occur in isolation. In many cases, you would think that distressed or neglected property would show many signs of decay resulting in multiple violations. Are there differences between cases with multiple violations and cases with only a single violation?
+
+The first question is how do we know that violations relate to a single piece of property? The first inclination might be to look at a shared address. If you look at the address with the most violations (4900 Raytown Road), you will notice something unusual. [insert charts later] The average days open for that address is not high. Going under the covers a little more, there is a real mix of open and closed violations spanning over a series of years. Those violations tie back to different case ids. If you actually look at the address in Google Street View, it looks as though the address pertains to an entire mobile home community. While this would require more verification, it may be worth trying something different to connect violations back to a single source: the case ID. This may not be the right unit of analysis. But we'll start there.
+
+First, how common are multiple violation cases?
+
+```{r message=FALSE, warning=FALSE}
+library(tidyr)
+# TODO - consider refactoring to make this easier to read
+# TODO - it appears just from sifting through the data that all violations 
+# within a case share the same days open count, which means that this could be simplified greatly.
+# I'm guessing the system closes them all out at the case level.
+by_case_id_and_ord_chapter <- violations  %>% 
+ filter((Ordinance.Chapter == '48' | Ordinance.Chapter == '56'), Case.ID != '0') %>% 
+ group_by(Case.ID, Ordinance.Chapter)  %>% 
+ summarize(Violation.Count = n(), Mean.Days.Open = mean(Days.Open)) %>% 
+ ungroup() %>% 
+ unite("combined", Violation.Count, Mean.Days.Open, sep = "-") %>% 
+ spread(Ordinance.Chapter, combined, fill = "0-0") %>%
+ separate(`48`, c("Violations.48", "Mean.Days.48"), sep = "-", convert = TRUE) %>% 
+ separate(`56`, c("Violations.56", "Mean.Days.56"), sep = "-", convert = TRUE) %>% 
+ mutate(Violation.Count = Violations.48 + Violations.56, 
+        Property.Violation.Ratio = Violations.56 / Violation.Count) %>% 
+ # TODO - consider refactoring. Is this a fair way to compute the overall mean?
+ mutate(Mean.Days.Open = 
+          Mean.Days.48*(1-Property.Violation.Ratio) + 
+          Mean.Days.56*Property.Violation.Ratio) %>% 
+ select(-Violations.48:-Mean.Days.56)
+
+by_case_id_and_ord_chapter %>% 
+  ggplot(aes(x = Violation.Count)) + geom_histogram(binwidth = 1) + 
+  scale_x_continuous(limits = c(0,40)) + 
+  labs(title = "Frequency of Cases Involving Multiple Violations") +
+  xlab("Number of Violations in a Case") +
+  ylab("Cases")
+
+
+```
+
+One thing interesting here is that most cases involve multiple violations. Also, the number of cases tapers off pretty dramatically by the time you reach 15 violations. Let's zoom in on that and look at the ratio of property violations to all violations within a case.
+
+```{r message=FALSE, warning=FALSE}
+by_case_id_and_ord_chapter %>% 
+  group_by(Violation.Count) %>% 
+  summarize(Average.Ratio = mean(Property.Violation.Ratio)) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = Violation.Count, y = Average.Ratio)) + geom_line() + 
+  scale_x_continuous(limits = c(0,15)) +
+  labs(title = "Ratio of Property Violations involved in Case") +
+  xlab("Number of Violations in a Case") +
+  ylab("Property Violation Ratio")
+  
+```
+
+If this graph is correctly constructed, the trend seems marked: the ratio of property violations involved in a case increases as the number of violations increases. 
+
+What about violation lifespan?
+
+```{r message=FALSE, warning=FALSE}
+# TODO - the pattern looks too regular. 
+# Need to double-check the operations leading up to this for errors
+lifespan_per_violation_count <- by_case_id_and_ord_chapter %>% 
+  group_by(Violation.Count) %>% 
+  summarize(Mean.Of.Mean = mean(Mean.Days.Open)) %>% 
+  ungroup() 
+
+lifespan_per_violation_count %>% 
+  ggplot(aes(x = Violation.Count, y = Mean.Of.Mean)) + geom_bar(stat = "identity") + 
+  scale_x_continuous(limits = c(0,15)) +
+  labs(title = "Average Lifespan by Number of Violations in Case") +
+  xlab("Number of Violations in a Case") +
+  ylab("Average Days Open")
+
+```
+
+This seems pretty striking. It is not surprising that a greater number of violations indicate more serious underlying problems that will be more difficult to resolve. But the pattern is so pronounced and regular here that the code used to derive this data should be scrutinized for errors.
+
+So, what if were to ask the same sorts of questions, but this time with address as the unit of analysis?
+
+```{r message=FALSE, warning=FALSE}
+by_address_and_chapter <- violations  %>% 
+ filter((Ordinance.Chapter == '48' | Ordinance.Chapter == '56'), Case.ID != '0') %>% 
+ group_by(Address, Ordinance.Chapter)  %>% 
+ summarize(Violation.Count = n(), Mean.Days.Open = mean(Days.Open)) %>% 
+ ungroup() %>% 
+ unite("combined", Violation.Count, Mean.Days.Open, sep = "-") %>% 
+ spread(Ordinance.Chapter, combined, fill = "0-0") %>%
+ separate(`48`, c("Violations.48", "Mean.Days.48"), sep = "-", convert = TRUE) %>% 
+ separate(`56`, c("Violations.56", "Mean.Days.56"), sep = "-", convert = TRUE) %>% 
+ mutate(Violation.Count = Violations.48 + Violations.56, 
+        Property.Violation.Ratio = Violations.56 / Violation.Count) %>% 
+ # TODO - consider refactoring. Is this a fair way to compute the overall mean?
+ mutate(Mean.Days.Open = 
+          Mean.Days.48*(1-Property.Violation.Ratio) + 
+          Mean.Days.56*Property.Violation.Ratio) %>% 
+ select(-Violations.48:-Mean.Days.56)
+
+by_address_and_chapter %>% 
+  ggplot(aes(x = Violation.Count)) + geom_histogram(binwidth = 1) + 
+  scale_x_continuous(limits = c(0,50)) + 
+  labs(title = "Frequency of Addresses Involving Multiple Violations") +
+  xlab("Number of Violations at an Address") +
+  ylab("Cases")
+```
+
+The overall shape of the curve is similar to that for cases, but more gradual. This suggests that the field tilts even further in the direction of multiple violations when grouped by address. Let's look at how the property violation ratio varies by violation count per address.
+
+```{r message=FALSE, warning=FALSE}
+by_address_and_chapter %>% 
+  group_by(Violation.Count) %>% 
+  summarize(Average.Ratio = mean(Property.Violation.Ratio)) %>% 
+  ungroup() %>% 
+  ggplot(aes(x = Violation.Count, y = Average.Ratio)) + geom_line() + 
+  scale_x_continuous(limits = c(0,50)) +
+  labs(title = "Ratio of Property Violations by Address") +
+  xlab("Number of Violations at an Address") +
+  ylab("Property Violation Ratio")
+```
+
+We see the same general pattern with address as with case. How about lifespan?
+
+```{r message=FALSE, warning=FALSE}
+# TODO - the pattern looks too regular. 
+# Need to double-check the operations leading up to this for errors
+lifespan_per_violation_count <- by_address_and_chapter %>% 
+  group_by(Violation.Count) %>% 
+  summarize(Mean.Of.Mean = mean(Mean.Days.Open)) %>% 
+  ungroup() 
+
+lifespan_per_violation_count %>% 
+  ggplot(aes(x = Violation.Count, y = Mean.Of.Mean)) + geom_bar(stat = "identity") + 
+  scale_x_continuous(limits = c(0,50)) +
+  labs(title = "Average Lifespan by Number of Violations for Address") +
+  xlab("Number of Violations at an Address") +
+  ylab("Average Days Open")
+
+```
+
+We see the same steady pattern here as we did with cases. That is really what you would expect, as each case pertains to a single address. The regularity starts to fray as you reach the higher violation counts, but the number of addresses involved is much smaller by that point and therefore more likely to reflect the vagaries of individual situations. If we were to display the entire curve, rather than limiting it to violation counts with reasonable frequency, you would see a far more erratic pattern.
+
+So, what is the relationship between cases and addresses?

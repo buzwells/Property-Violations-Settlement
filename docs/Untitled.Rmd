@@ -1,0 +1,30 @@
+---
+title: "test"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(cache=FALSE)
+if(!exists('violations_dir')) {
+  source("../configuration/violations_env.R")
+}
+knitr::opts_knit$set(root.dir = violations_dir)
+```
+
+## Including Plots
+
+You can also embed plots, for example:
+
+```{r message=FALSE}
+# load the violations data
+path <- paste(knitr::opts_knit$get("root_dir"), "/data/load_violations.R", sep = "")
+print(path)
+#source(path)
+#source(paste(violations_dir, "/data/load_violations.R", sep = ""))
+#violations %>%  glimpse()
+# TODO - remove this temporary code once the data is fixed
+#violations <- violations %>% filter(!is.na(Days.Open))
+```
+
+`r path`
