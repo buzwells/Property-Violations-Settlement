@@ -1,3 +1,6 @@
+library(dplyr)
+library(tidyr)
+
 open_addresses <- violations %>% 
   filter(Status == "Open" & 
            (Ordinance.Chapter == "48" | Ordinance.Chapter == "56") &
@@ -25,4 +28,6 @@ open_ordinances_by_address <- violations %>%
   summarize(Ordinances = paste(sprintf("%s %s", Violation.Entry.Date, Ordinance.Title), collapse = "<br/>")) %>% 
   ungroup()
 
-open_addresses <-  left_join(open_addresses, open_ordinances_by_address, by = 'Address')
+open_addresses <- left_join(open_addresses, open_ordinances_by_address, by = 'Address')
+
+rm(open_ordinances_by_address)

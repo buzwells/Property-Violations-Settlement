@@ -2,10 +2,9 @@
 title: "Code Violation Types - First Look"
 output: html_document
 linkcolor: blue
-toc: yes
 ---
 
-```{r setup, include=FALSE}
+```{r setup, include=FALSE, echo=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 knitr::opts_chunk$set(cache=FALSE)
 if(!exists('violations_dir')) {
@@ -21,11 +20,9 @@ Code violations can create dangerous conditions, depress real property prices an
 
 The core dataset [can be found on the open data website for Kansas City](https://data.kcmo.org/Housing/Property-Violations/nhtf-e75a). It consists of more than 400,000 summary records for the code violations. There is a single record for each violation describing when it started, what it's about, the current status and if/when it ended. Each record also contains a variety of data to help locate the violation geographically. Let's see what this data looks like.
 
-```{r message=FALSE}
-# load the violations data
-path <- sprintf("%s%s", violations_dir, "R/load_violations.R")
-source(path)
-#path <- sprintf("%s%s", violations_dir, "R/add_ordinance_titles.R")
+```{r message=FALSE, warning=FALSE}
+# load the violations data - use get_violations_path() to mitigate Knitr working dir issues
+source(get_violations_path("R/load_violations.R"))
 violations %>%  glimpse()
 # TODO - remove this temporary code once the data is fixed
 violations <- violations %>% filter(!is.na(Days.Open))
@@ -461,5 +458,3 @@ lifespan_per_violation_count %>%
 ```
 
 We see the same steady pattern here as we did with cases. That is really what you would expect, as each case pertains to a single address. The regularity starts to fray as you reach the higher violation counts, but the number of addresses involved is much smaller by that point and therefore more likely to reflect the vagaries of individual situations. If we were to display the entire curve, rather than limiting it to violation counts with reasonable frequency, you would see a far more erratic pattern.
-
-So, what is the relationship between cases and addresses?
