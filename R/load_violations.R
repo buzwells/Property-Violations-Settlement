@@ -74,13 +74,15 @@ column_classes = c(
 # negotiate issue with RMarkdown working directory being different than console/global enviroment for RStudio
 violations <-
   read.csv(get_violations_path("data/Property_Violations.csv"), colClasses = column_classes)
+# clean up temporary objects
+rm(column_classes)
 
 # convert dates using lubridate
 violations$Case.Opened.Date = mdy(violations$Case.Opened.Date)
 violations$Case.Closed.Date = mdy(violations$Case.Closed.Date)
 violations$Violation.Entry.Date = mdy(violations$Violation.Entry.Date)
 
-# clean up Ordinance.Number
+# strip unnecessary suffix from Ordinance.Number
 violations$Ordinance.Number <-
   gsub(" C.O.", "", violations$Ordinance.Number)
 
@@ -95,6 +97,9 @@ violations$Latitude <-
   as.numeric(str_split_fixed(coordinates, ", ", 2)[, 1])
 violations$Longitude <-
   as.numeric(str_split_fixed(coordinates, ", ", 2)[, 2])
+# clean up by removing temporary objects
+rm(reg_coordinates)
+rm(coordinates)
 
 # KC Ordinance Titles
 ordinance_titles <- read.csv(get_violations_path("data/ordinance_titles.csv"), stringsAsFactors = FALSE)
