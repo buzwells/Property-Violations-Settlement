@@ -32,5 +32,4 @@ if(file.exists(temp_path)) {
 
 rm(temp_path)
 
-load_common_libs()
 
