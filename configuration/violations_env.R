@@ -31,5 +31,7 @@ if(file.exists(temp_path)) {
 }
 
 rm(temp_path)
+# change the default for stringsAsFactors to a more intuitive behavior
+options(stringsAsFactors = FALSE)
 
 

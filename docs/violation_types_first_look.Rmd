@@ -6,7 +6,7 @@ linkcolor: blue
 
 ```{r setup, include=FALSE, echo=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-knitr::opts_chunk$set(cache=TRUE)
+knitr::opts_chunk$set(cache=FALSE)
 if(!exists('violations_dir')) {
   source("../configuration/violations_env.R")
 }
@@ -127,8 +127,8 @@ by_title <- violations %>%
   group_by(Ordinance.Title) %>% 
   summarize(Violation.Count = n(), Mean.Days.Open = mean(Days.Open)) %>%
   ungroup() %>% 
-  filter(Violation.Count > 3000) %>% 
-  mutate(Percent.Violations = (Violation.Count / nrow(violations))*100.00) %>%
+  filter(Violation.Count > 2000) %>% 
+  mutate(Percent.Violations = (Violation.Count / nrow(violations %>% filter(Ordinance.Chapter %in% c('48','56'))))*100.00) %>%
   arrange(desc(Violation.Count))
 
 by_title$Percent.Violations <- round(by_title$Percent.Violations, digits = 2)
@@ -141,7 +141,7 @@ by_title %>%
   theme(axis.text.x  = element_text(angle=90, vjust=0.5, size=8))
 ```
 
-These "top" ordinances account for `r sum(by_title[, 'Percent.Violations'])` % of all violations. The top three alone - trash, overgrown weeds/grass, and open storage, all nuisance violations - account for `r sum(by_title[1:3, 'Percent.Violations'])` of violations. Notice, as well, the presence in this list of some violations that almost deserve a class of their own: registration requirement violations for either vacant or rental property.
+These "top" `r nrow(by_title)` ordinances account for `r sum(by_title[, 'Percent.Violations'])` % of all violations. The top three alone - trash, overgrown weeds/grass, and open storage, all nuisance violations - account for `r sum(by_title[1:3, 'Percent.Violations'])` of violations. Notice, as well, the presence in this list of some violations that almost deserve a class of their own: registration requirement violations for either vacant or rental property.
 
 How do the average lifespans of these different ordinance violations compare?
 
