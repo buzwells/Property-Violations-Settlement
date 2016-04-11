@@ -35,3 +35,13 @@ plot_top_ordinance_frequency <- function(d, top_tier_threshold = 2000) {
     xlab("Ordinance Title") + ylab("Violations") +
     theme(axis.text.x  = element_text(angle=90, vjust=0.5, size=8))    
 }
+
+plot_median_days_open_by_ordinance <- function(d, top_tier_threshold = 2000) {
+  d %>% 
+    top_ordinances(top_tier_threshold) %>% 
+    ggplot(aes(reorder(Ordinance.Title, -Violation.Count), Median.Days.Open)) +    
+    geom_bar(stat="identity") + 
+    labs(title="Median Days Open by Ordinance (2009-2016)") + 
+    xlab("Ordinance Title") + ylab("Violations") +
+    theme(axis.text.x  = element_text(angle=90, vjust=0.5, size=8))  
+}
